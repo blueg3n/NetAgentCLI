@@ -18,12 +18,14 @@ vector<string> output = {
   "--------------------",
   "Interface: ",
   "Speed: ",
+  "Total Traffic: ",
   "Press Ctrl + C to quit"  
 };
 
 struct InterPacket {
     string interface;
     unsigned long long rxBytes;
+    double trafficBytes = 0;
 };
 
 string getActiveInterface() {
@@ -109,6 +111,10 @@ double monitorSpeed(InterPacket& pck, ifstream& file) {
     return speed;    
 }
 
+void totalBytes(InterPacket& pck, double& addByte) {
+    pck.trafficBytes += addByte;
+} 
+
 void runMonitoring(ofstream* outputFile = nullptr) {
     InterPacket pck = getNetInfo();
     cout << output[0] << "\n";
@@ -121,11 +127,14 @@ void runMonitoring(ofstream* outputFile = nullptr) {
 
         ifstream file("/proc/net/dev");
         double speed = monitorSpeed(pck, file);
-        cout << "\r" << output[4] << to_string(speed) << flush;
+        totalBytes(pck, speed);
+        cout << "\033[2K\r" << output[4] << to_string(speed) << "\n";
+        cout << "\033[2K\r" << output[5] << to_string(pck.trafficBytes) << "\033[1A" << flush;
         if (outputFile != nullptr && outputFile->is_open()) {
             *outputFile << speed << "\n";
             outputFile->flush();
         }
+        
     }
 }
 
