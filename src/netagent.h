@@ -24,8 +24,10 @@ vector<string> output = {
 
 struct InterPacket {
     string interface;
-    unsigned long long rxBytes;
-    double trafficBytes = 0;
+    unsigned long long download;
+    unsigned long long upload;
+    unsigned long long downloadTraffic = 0;
+    unsigned long long uploadTraffic = 0;
 };
 
 string getActiveInterface() {
@@ -54,7 +56,8 @@ InterPacket getNetInfo() {
 
     string line;
     string interface;
-    unsigned long long rxBytes;
+    string d;
+    unsigned long long download, upload;
 
     // Skips the header
     getline(netInfo, line);
@@ -63,15 +66,21 @@ InterPacket getNetInfo() {
     pck.interface = getActiveInterface();
 
     while (getline(netInfo, line)) {    
+        // Remove the colon from the interface name.
         replace(line.begin(), line.end(), ':', ' ');
 
         stringstream ss(line);
-        ss >> interface >> rxBytes;
+        ss >> interface >> download;
 
-        // Remove the colon from the interface name.
+        for (int i = 0; i < 7; i ++) {
+            ss >> d;
+        }    
+
+        ss >> upload;
 
         if (interface == pck.interface) {
-            pck.rxBytes = rxBytes;
+            pck.downloadTraffic = download;
+            pck.uploadTraffic = upload;
             break;
         }
     }
@@ -84,11 +93,13 @@ double getByteSpeed(unsigned long long oldBytes, unsigned long long newBytes) {
     return (newBytes - oldBytes) * 8.0 / 1024.0;
 }
 
-double monitorSpeed(InterPacket& pck, ifstream& file) {
-    unsigned long long newBytes;
+vector<double> monitorSpeed(InterPacket& pck, ifstream& file) {
+    unsigned long long newDownload;
+    unsigned long long newUpload;
 
     string line;
     string interface;
+    string d;
 
     // Skip headers
     getline(file, line);
@@ -100,22 +111,33 @@ double monitorSpeed(InterPacket& pck, ifstream& file) {
             // Remove collon from interface
             replace(line.begin(), line.end(), ':', ' ');
             stringstream ss(line);
+
+            ss >> interface >> newDownload;
             
-            ss >> interface >> newBytes;
+            for (int i = 0; i < 7; i ++) {
+                ss >> d;
+            }
+
+            ss >> newUpload;
+            
         }
     }
 
-    double speed = getByteSpeed(pck.rxBytes, newBytes);
-    pck.rxBytes = newBytes;
+    double downloadSpeed = getByteSpeed(pck.download, newDownload);
+    pck.download = newDownload;
 
-    return speed;    
+    double uploadSpeed = getByteSpeed(pck.upload, newUpload);
+    pck.upload = newUpload;
+
+    return {downloadSpeed, uploadSpeed};    
 }
 
-void totalBytes(InterPacket& pck, double& addByte) {
-    pck.trafficBytes += addByte;
+void totalBytes(InterPacket& pck, double& addDown, double& addUp) {
+    pck.downloadTraffic += addDown;
+    pck.uploadTraffic += addUp;
 } 
 
-void runMonitoring(ofstream* outputFile = nullptr) {
+void runMonitoring(int time = 999, ofstream* outputFile = nullptr) {
     InterPacket pck = getNetInfo();
     cout << output[0] << "\n";
     cout << output[1] << "\n";
@@ -123,15 +145,21 @@ void runMonitoring(ofstream* outputFile = nullptr) {
     cout << output[3] << pck.interface << "\n";
 
     while (true) {
-        this_thread::sleep_for(chrono::milliseconds(900));
+        this_thread::sleep_for(chrono::milliseconds(time));
 
         ifstream file("/proc/net/dev");
-        double speed = monitorSpeed(pck, file);
-        totalBytes(pck, speed);
-        cout << "\033[2K\r" << output[4] << to_string(speed) << "\n";
-        cout << "\033[2K\r" << output[5] << to_string(pck.trafficBytes) << "\033[1A" << flush;
+        vector<double> speed = monitorSpeed(pck, file);
+        totalBytes(pck, speed[0], speed[1]);
+
+        cout << "\033[2K\r" << output[4] 
+        << speed[0] << " | " << speed[1] << "\n";
+        
+        cout << "\033[2K\r" << output[5] 
+        << pck.downloadTraffic << " | " << pck.uploadTraffic << "\033[1A" << flush;
+        
         if (outputFile != nullptr && outputFile->is_open()) {
-            *outputFile << speed << "\n";
+            *outputFile << "Download: "<< speed[0] << "\n";
+            *outputFile << "Upload: "<< speed[1] << "\n";
             outputFile->flush();
         }
         
